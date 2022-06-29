@@ -129,8 +129,8 @@ if __name__ == "__main__":
     #
     # ~~~~~~ Configure Here ~~~~~~ #
     #
-    Config.user = "USACE"
-    Config.repo = "rts-utils"
+    Config.user = "jbkolze"
+    Config.repo = "lrl-rts-utils"
     Config.branch = "stable"
     Config.file_path = "dist/rts-utils.zip"
     Config.personal_config = "RTSUTILS-Personal.config"

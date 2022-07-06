@@ -295,21 +295,9 @@ class Cumulus():
             self.outer_class.go_config["Subcommand"] = "get"
             self.outer_class.go_config["Endpoint"] = "watersheds"
 
-            ws_out, stderr = go.get(self.outer_class.go_config, out_err=True, is_shell=False)
-            self.outer_class.go_config["Endpoint"] = "products"
-            ps_out, stderr = go.get(self.outer_class.go_config, out_err=True, is_shell=False)
-
-            if "error" in stderr:
-                print(stderr)
-                JOptionPane.showMessageDialog(
-                    None,
-                    stderr.split("::")[-1],
-                    "Program Error",
-                    JOptionPane.ERROR_MESSAGE,
-                )
-
-            self.api_watersheds = watershed_refactor(json.loads(ws_out)) if ws_out else {}
-            self.api_products = product_refactor(json.loads(ps_out)) if ps_out else {}
+            ps_out, ws_out = self.outer_class.get_metadata()
+            self.api_watersheds = watershed_refactor(ws_out) if ws_out else {}
+            self.api_products = product_refactor(ps_out) if ps_out else {}
 
             frame = JFrame("Cumulus Configuration")
             frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE)

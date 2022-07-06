@@ -3,6 +3,7 @@
 
 import os
 import json
+from copy import deepcopy
 from java.lang import Short, Runnable
 from java.awt import EventQueue, Font, Point, Cursor
 from javax.swing import (
@@ -25,10 +26,14 @@ from rtsutils.cavi.jython import jutil
 from rtsutils.utils.config import DictConfig
 from rtsutils.utils import CLOUD_ICON, product_index, product_refactor, watershed_index, watershed_refactor
 
+class CumulusConnectionError(Exception):
+    pass
 
 class Cumulus():
     cumulus_configs = {}
     go_config = {}
+    products_meta = None
+    watersheds_meta = None
 
     @classmethod
     def invoke(cls):
@@ -87,6 +92,48 @@ class Cumulus():
             Go parameters to update class defined configurations
         """
         cls.go_config = dict_
+
+    @classmethod
+    def get_metadata(cls):
+        """Retrieves Cumulus product and watershed metadata.
+        
+        If metadata has not been previously downloaded, executes a go
+        subroutine to download the metadata.  Original go configuration
+        is maintained after function runs.
+
+        Returns
+        -------
+        products_meta : dict
+            Cumulus products metadata
+
+        watersheds_meta : dict
+            Cumulus watersheds metadata
+        """
+        if all([cls.products_meta, cls.watersheds_meta]):
+            return cls.products_meta, cls.watersheds_meta
+
+        orig_go_config = deepcopy(cls.go_config)
+
+        try:
+            cls.go_config["StdOut"] = "true"
+            cls.go_config["Subcommand"] = "get"
+
+            cls.go_config["Endpoint"] = "products"
+            ps_out, stderr = go.get(cls.go_config, out_err=True, is_shell=False)
+            if "error" in stderr:
+                raise CumulusConnectionError(stderr)
+            cls.products_meta = json.loads(ps_out)
+            
+            cls.go_config["Endpoint"] = "watersheds"
+            ws_out, stderr = go.get(cls.go_config, out_err=True, is_shell=False)
+            if "error" in stderr:
+                raise CumulusConnectionError(stderr)
+            cls.watersheds_meta = json.loads(ws_out)
+
+            return cls.products_meta, cls.watersheds_meta
+
+        finally:
+            cls.go_config = orig_go_config
 
     class Cumulus_Runnable(Runnable):
         """java.lang.Runnable class executes run when called"""

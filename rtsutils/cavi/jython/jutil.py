@@ -5,6 +5,7 @@ CAVI environmnet
 """
 
 from collections import namedtuple
+from datetime import datetime, timedelta
 import os
 import tempfile
 from rtsutils.usgs import USGS_EXTRACT_CODES
@@ -139,6 +140,72 @@ def convert_dss(dss_src, dss_dst):
         print(ex)
 
     print(msg)
+
+
+def get_precip_record_datetimes(pathname):
+    """Returns start and end datetimes for a given DSS precip record.
+
+    Parameters
+    ----------
+    pathname : string
+        The DSS pathname for which to determine the time window.
+
+    Returns
+    -------
+    path_start_dt : datetime
+        Start timestamp of the record.
+    path_end_dt : datetime
+        End timestamp of the record.
+    """
+    split_path = pathname.split("/")
+    d_part = split_path[4]
+    e_part = split_path[5]
+    if e_part[-4:] == "2400":
+        temp_dt = datetime.strptime(e_part, "%d%b%Y:2400")
+        temp_dt = temp_dt + timedelta(days=1)
+        e_part = temp_dt.strftime("%d%b%Y:0000")
+    path_start_dt = datetime.strptime(d_part, "%d%b%Y:%H%M")
+    path_end_dt = datetime.strptime(e_part, "%d%b%Y:%H%M")
+    return path_start_dt, path_end_dt
+
+
+def get_existing_precip_data_range(dss_path, b_part, f_part):
+    """Determine the existing date range of a precip dataset in a DSS file.
+
+    This method does not account for gaps in the dataset.  It only searches for
+    the timestamps of the first and last available records.
+
+    Parameters
+    ----------
+    dss_path : string
+        The DSS file to evaluate.
+    b_part : string
+        The B-part of the precip pathnames.
+    f_part : string
+        The F-part of the precip pathnames.
+
+    Returns
+    -------
+    start_dt : datetime
+        Timestamp of the earliest available data.
+    end_dt : datetime
+        Timestamp of the most recent available data.
+    """
+    start_dt = None
+    end_dt = None
+    dss = HecDss.open(dss_path)
+    try:
+        search_str = "B={} F={}".format(b_part, f_part)
+        paths = dss.getCatalogedPathnames(search_str)
+        for path in paths:
+            path_start_dt, path_end_dt = get_precip_record_datetimes(path)
+            if not start_dt or path_start_dt < start_dt:
+                start_dt = path_start_dt
+            if not end_dt or path_end_dt > end_dt:
+                end_dt = path_end_dt
+    finally:
+        dss.done()
+    return start_dt, end_dt
 
 
 class FileChooser(JFileChooser):

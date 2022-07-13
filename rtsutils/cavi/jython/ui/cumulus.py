@@ -4,6 +4,7 @@
 import os
 import json
 from copy import deepcopy
+from datetime import datetime
 from java.lang import Short, Runnable
 from java.awt import EventQueue, Font, Point, Cursor
 from javax.swing import (
@@ -26,8 +27,12 @@ from rtsutils.cavi.jython import jutil
 from rtsutils.utils.config import DictConfig
 from rtsutils.utils import CLOUD_ICON, product_index, product_refactor, watershed_index, watershed_refactor
 
+ISO_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
 class CumulusConnectionError(Exception):
     pass
+
 
 class Cumulus():
     cumulus_configs = {}
@@ -42,7 +47,7 @@ class Cumulus():
         EventQueue.invokeLater(cls.Cumulus_Runnable())
 
     @classmethod
-    def execute(cls):
+    def execute(cls, use_cache=True):
         """executing the Go binding as a subprocess"""
         configurations = DictConfig(cls.cumulus_configs).read()
 
@@ -53,6 +58,13 @@ class Cumulus():
             "ID": configurations["watershed_id"],
             "Products": configurations["product_ids"],
         })
+
+        if use_cache:
+            cls.adjust_dates_by_cache()
+            after = datetime.strptime(cls.go_config["After"], ISO_FORMAT)
+            before = datetime.strptime(cls.go_config["Before"], ISO_FORMAT)
+            if before <= after:
+                return
 
         stdout, stderr = go.get(cls.go_config, out_err=True, is_shell=False)
         print(stderr)
@@ -96,7 +108,7 @@ class Cumulus():
     @classmethod
     def get_metadata(cls):
         """Retrieves Cumulus product and watershed metadata.
-        
+
         If metadata has not been previously downloaded, executes a go
         subroutine to download the metadata.  Original go configuration
         is maintained after function runs.
@@ -123,7 +135,7 @@ class Cumulus():
             if "error" in stderr:
                 raise CumulusConnectionError(stderr)
             cls.products_meta = json.loads(ps_out)
-            
+
             cls.go_config["Endpoint"] = "watersheds"
             ws_out, stderr = go.get(cls.go_config, out_err=True, is_shell=False)
             if "error" in stderr:
@@ -134,6 +146,79 @@ class Cumulus():
 
         finally:
             cls.go_config = orig_go_config
+
+    @classmethod
+    def get_product(cls, product_id):
+        """Retrieve product metadata by id.
+
+        Parameters
+        ----------
+        product_id : string
+            The id of the product.
+
+        Returns
+        -------
+        dict or None
+            The metadata of the product if found, or None if not.
+        """
+        products, _ = cls.get_metadata()
+        for product in products:
+            if product["id"] == product_id:
+                return product
+        return None
+
+    @classmethod
+    def get_watershed(cls, watershed_id):
+        """Retrieve watershed metadata by id.
+
+        Parameters
+        ----------
+        watershed_id : string
+            The id of the watershed.
+
+        Returns
+        -------
+        dict or None
+            The metadata of the watershed if found, or None if not.
+        """
+        _, watersheds = cls.get_metadata()
+        for watershed in watersheds:
+            if watershed["id"] == watershed_id:
+                return watershed
+        return None
+
+    @classmethod
+    def adjust_dates_by_cache(cls):
+        """Removes existing data range from go_config time window
+
+        Checks for existing data in the DSS file set in the cumulus configuration.
+        Searches based on the b-part of the watershed and the f-part of the
+        -first observed- product as listed in product_ids.
+
+        The After and Before values within go_config are adjusted to avoid
+        downloading data that already exists within the DSS file.
+        """
+        config = DictConfig(cls.cumulus_configs).read()
+
+        after = datetime.strptime(cls.go_config["After"], ISO_FORMAT)
+        before = datetime.strptime(cls.go_config["Before"], ISO_FORMAT)
+
+        dss_path = config["dss"]
+        b_part = cls.get_watershed(config["watershed_id"])["name"]
+        for product_id in config["product_ids"]:
+            product = cls.get_product(product_id)
+            if product["last_forecast_version"]:  # Skip forecasts
+                continue
+            f_part = product["dss_fpart"]
+            data_start, data_end = jutil.get_existing_precip_data_range(dss_path, b_part, f_part)
+            if data_start is None or data_end is None:
+                break
+            if data_end > after > data_start:
+                after = data_end
+            if data_end > before > data_start:
+                before = data_start
+            cls.go_config["After"] = after.strftime(ISO_FORMAT)
+            cls.go_config["Before"] = before.strftime(ISO_FORMAT)
 
     class Cumulus_Runnable(Runnable):
         """java.lang.Runnable class executes run when called"""

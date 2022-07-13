@@ -65,7 +65,7 @@ def put_timeseries(site, dsspath, apart, bpart):
             bpart = site_parameters.name
         elif bpart == "Site Number":
             bpart = site_parameters.site_number
-        
+
         pathname = "/{0}/{1}/{2}//{3}/{4}/".format(
             apart, bpart, parameter, epart, version
         ).upper()
@@ -103,7 +103,6 @@ def put_timeseries(site, dsspath, apart, bpart):
         )
 
 
-
 def convert_dss(dss_src, dss_dst):
     """convert DSS7 from Cumulus to DSS6 on local machine defined by DSS
     destination
@@ -138,7 +137,6 @@ def convert_dss(dss_src, dss_dst):
         quit()
     except Exception as ex:
         print(ex)
-
 
     print(msg)
 

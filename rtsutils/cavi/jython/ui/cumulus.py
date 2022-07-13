@@ -176,7 +176,7 @@ class Cumulus():
                 component-defined action
             """
             self.dispose()
-        
+
         def create_jbutton(self, label, action):
             """Dynamic JButton creation
 
@@ -275,7 +275,8 @@ class Cumulus():
             content_pane = frame.getContentPane()
 
             # create lists
-            self.watershed_list = self.create_jlist("Watersheds", self.api_watersheds, ListSelectionModel.SINGLE_SELECTION)
+            self.watershed_list = self.create_jlist(
+                "Watersheds", self.api_watersheds, ListSelectionModel.SINGLE_SELECTION)
             self.product_list = self.create_jlist("Products", self.api_products)
             # create buttons
             select_button = self.create_jbutton("...", self.select)
@@ -308,6 +309,8 @@ class Cumulus():
             except KeyError as ex:
                 print("KeyError: missing {}".format(ex))
 
+            # autopep8: off
+            # pylint: disable=bad-continuation, line-too-long
             layout = GroupLayout(content_pane)
             content_pane.setLayout(layout)
             layout.setHorizontalGroup(
@@ -350,9 +353,10 @@ class Cumulus():
                         .addComponent(save_button, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
                     .addContainerGap())
             )
+            # pylint: enable=bad-continuation, line-too-long
+            # autopep8: on
 
             frame.pack()
             frame.setLocationRelativeTo(None)
-
 
             frame.setVisible(True)

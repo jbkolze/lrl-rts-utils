@@ -115,10 +115,10 @@ class Cumulus():
 
         Returns
         -------
-        products_meta : dict
+        products_meta : list[dict]
             Cumulus products metadata
 
-        watersheds_meta : dict
+        watersheds_meta : list[dict]
             Cumulus watersheds metadata
         """
         if all([cls.products_meta, cls.watersheds_meta]):
@@ -148,7 +148,27 @@ class Cumulus():
             cls.go_config = orig_go_config
 
     @classmethod
-    def get_product(cls, product_id):
+    def get_product(cls, name):
+        """Retrieve product metadata by name.
+
+        Parameters
+        ----------
+        name : string
+            The name of the product.
+
+        Returns
+        -------
+        dict or None
+            The metadata of the product if found, or None if not.
+        """
+        products, _ = cls.get_metadata()
+        for product in products:
+            if product["name"] == name:
+                return product
+        return None
+
+    @classmethod
+    def get_product_by_id(cls, product_id):
         """Retrieve product metadata by id.
 
         Parameters
@@ -168,7 +188,29 @@ class Cumulus():
         return None
 
     @classmethod
-    def get_watershed(cls, watershed_id):
+    def get_watershed(cls, office, name):
+        """Retrieve watershed metadata by office symbol and name.
+
+        Parameters
+        ----------
+        office : string
+            The 3-letter office symbol for the watershed.
+        name : string
+            The name of the watershed.
+
+        Returns
+        -------
+        dict or None
+            The metadata of the watershed if found, or None if not.
+        """
+        _, watersheds = cls.get_metadata()
+        for watershed in watersheds:
+            if watershed["office_symbol"] == office and watershed["name"] == name:
+                return watershed
+        return None
+
+    @classmethod
+    def get_watershed_by_id(cls, watershed_id):
         """Retrieve watershed metadata by id.
 
         Parameters
@@ -204,9 +246,9 @@ class Cumulus():
         before = datetime.strptime(cls.go_config["Before"], ISO_FORMAT)
 
         dss_path = config["dss"]
-        b_part = cls.get_watershed(config["watershed_id"])["name"]
+        b_part = cls.get_watershed_by_id(config["watershed_id"])["name"]
         for product_id in config["product_ids"]:
-            product = cls.get_product(product_id)
+            product = cls.get_product_by_id(product_id)
             if product["last_forecast_version"]:  # Skip forecasts
                 continue
             f_part = product["dss_fpart"]

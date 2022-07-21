@@ -39,6 +39,10 @@ class Cumulus():
     go_config = {}
     products_meta = None
     watersheds_meta = None
+    publish = None
+
+    def __init__(self, publish=None):
+        Cumulus.publish = publish
 
     @classmethod
     def invoke(cls):

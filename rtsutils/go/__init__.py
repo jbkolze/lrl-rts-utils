@@ -28,7 +28,7 @@ if platform.python_implementation() == "Jython":
 CAVI_GO = "{}/{}/{}".format(os.path.dirname(__file__), _PLATFORM_SYS, _BINDING)
 
 
-def get(go_flags=None, out_err=True, is_shell=False):
+def get(go_flags=None, out_err=True, is_shell=False, realtime=False, publish=None):
     """Method to initiate the Go binding as a subprocess
 
     Parameters
@@ -46,12 +46,25 @@ def get(go_flags=None, out_err=True, is_shell=False):
     subprocess_popen = subprocess.Popen(
         CAVI_GO,
         shell=is_shell,
+        bufsize=1,
         cwd=os.path.dirname(__file__),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     if out_err:
+        if realtime:
+            stderr = b''
+            subprocess_popen.stdin.write(json.dumps(go_flags))
+            subprocess_popen.stdin.flush()
+            subprocess_popen.stdin.close()
+            for line in subprocess_popen.stderr:
+                if publish:
+                    publish(line.strip().decode())
+                else:
+                    print(line.strip().decode())
+                stderr += line
+            return subprocess_popen.stdout.read(), stderr
         std_in_out = subprocess_popen.communicate(input=json.dumps(go_flags))
         return std_in_out
 

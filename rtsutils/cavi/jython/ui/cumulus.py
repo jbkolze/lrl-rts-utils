@@ -42,6 +42,15 @@ class Cumulus():
     publish = None
 
     def __init__(self, publish=None):
+        """Initializes the Cumulus download manager class.
+
+        Parameters
+        ----------
+        publish : callable, optional
+            A callback function that takes a single string (for log messages) or a
+            single integer (for progress bar updates) as an argument.  Passes real-time
+            updates to an external GUI.  By default, None.
+        """
         Cumulus.publish = publish
 
     @classmethod
@@ -70,9 +79,14 @@ class Cumulus():
             if before <= after:
                 return
 
-        stdout, stderr = go.get(cls.go_config, out_err=True, is_shell=False)
-        print(stderr)
-        if "error" in stderr:
+        stdout, stderr = go.get(
+            cls.go_config,
+            out_err=True,
+            is_shell=False,
+            realtime=True,
+            publish=cls.publish
+        )
+        if "error" in stderr and cls.publish is None:
             JOptionPane.showMessageDialog(
                 None,
                 stderr.split("::")[-1],
@@ -84,12 +98,15 @@ class Cumulus():
                 _, file_path = stdout.split("::")
                 jutil.convert_dss(file_path, configurations["dss"])
 
-                JOptionPane.showMessageDialog(
-                    None,
-                    "Program Done",
-                    "Program Done",
-                    JOptionPane.INFORMATION_MESSAGE,
-                )
+                if cls.publish:
+                    cls.publish("Program completed successfully.")
+                else:
+                    JOptionPane.showMessageDialog(
+                        None,
+                        "Program Done",
+                        "Program Done",
+                        JOptionPane.INFORMATION_MESSAGE,
+                    )
             except ValueError as ex:
                 print(ex)
 

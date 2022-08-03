@@ -100,9 +100,14 @@ class Cumulus():
             after = datetime.strptime(cls.go_config["After"], ISO_FORMAT)
             before = datetime.strptime(cls.go_config["Before"], ISO_FORMAT)
             if before <= after:
-                cls.report("All requested data has been previously downloaded.  Aborting...")
-                return
-            cls.report("Updated time window: {} - {}".format(cls.go_config["After"], cls.go_config["Before"]))
+                cls.report("All requested observed data has been previously downloaded.")
+                cls.report("Removing observed products...")
+                cls.remove_observed_products()
+                if not cls.go_config["Products"]:
+                    cls.report("No product downloads required.  Aborting...")
+                    return
+            else:
+                cls.report("Updated time window: {} - {}".format(cls.go_config["After"], cls.go_config["Before"]))
 
         cls.report("---BEGIN CUMULUS DOWNLOAD SUBROUTINE---")
         stdout, stderr = go.get(
@@ -311,6 +316,17 @@ class Cumulus():
                 before = data_start
             cls.go_config["After"] = after.strftime(ISO_FORMAT)
             cls.go_config["Before"] = before.strftime(ISO_FORMAT)
+
+    @classmethod
+    def remove_observed_products(cls):
+        """Remove non-forecast products from go_config."""
+        product_ids = cls.go_config["Products"]
+        forecast_product_ids = []
+        for product_id in product_ids:
+            product = cls.get_product_by_id(product_id)
+            if product["last_forecast_version"] is not None:
+                forecast_product_ids.append(product_id)
+        cls.go_config["Products"] = forecast_product_ids
 
     class Cumulus_Runnable(Runnable):
         """java.lang.Runnable class executes run when called"""

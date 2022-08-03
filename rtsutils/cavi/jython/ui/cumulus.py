@@ -39,6 +39,36 @@ class Cumulus():
     go_config = {}
     products_meta = None
     watersheds_meta = None
+    publish = None
+
+    def __init__(self, publish=None):
+        """Initializes the Cumulus download manager class.
+
+        Parameters
+        ----------
+        publish : callable, optional
+            A callback function that takes a single string (for log messages) or a
+            single integer (for progress bar updates) as an argument.  Passes real-time
+            updates to an external GUI.  By default, None.
+        """
+        Cumulus.publish = publish
+        Cumulus.report("Cumulus data request has been initialized.")
+
+    @classmethod
+    def report(cls, msg):
+        """Publishes or prints a timestamped status update.
+
+        Parameters
+        ----------
+        msg : str
+            The string to be published or printed.
+        """
+        now_dt = datetime.strftime(datetime.now(), '%Y/%m/%d %H:%M:%S')
+        dt_msg = '{} {}'.format(now_dt, msg)
+        if cls.publish:
+            cls.publish(dt_msg)
+        else:
+            print(dt_msg)
 
     @classmethod
     def invoke(cls):
@@ -59,16 +89,31 @@ class Cumulus():
             "Products": configurations["product_ids"],
         })
 
+        product_list = ", ".join([cls.get_product_by_id(product_id)["name"]
+                                 for product_id in configurations["product_ids"]])
+        cls.report("Requested products: {}".format(product_list))
+        cls.report("Requested time window: {} - {}".format(cls.go_config["After"], cls.go_config["Before"]))
+
         if use_cache:
+            cls.report("Updating time window based on cached/existing data...")
             cls.adjust_dates_by_cache()
             after = datetime.strptime(cls.go_config["After"], ISO_FORMAT)
             before = datetime.strptime(cls.go_config["Before"], ISO_FORMAT)
             if before <= after:
+                cls.report("All requested data has been previously downloaded.  Aborting...")
                 return
+            cls.report("Updated time window: {} - {}".format(cls.go_config["After"], cls.go_config["Before"]))
 
-        stdout, stderr = go.get(cls.go_config, out_err=True, is_shell=False)
-        print(stderr)
-        if "error" in stderr:
+        cls.report("---BEGIN CUMULUS DOWNLOAD SUBROUTINE---")
+        stdout, stderr = go.get(
+            cls.go_config,
+            out_err=True,
+            is_shell=False,
+            realtime=True,
+            publish=cls.publish
+        )
+        cls.report("---CUMULUS DOWNLOAD SUBROUTINE COMPLETE---")
+        if "error" in stderr and cls.publish is None:
             JOptionPane.showMessageDialog(
                 None,
                 stderr.split("::")[-1],
@@ -80,12 +125,14 @@ class Cumulus():
                 _, file_path = stdout.split("::")
                 jutil.convert_dss(file_path, configurations["dss"])
 
-                JOptionPane.showMessageDialog(
-                    None,
-                    "Program Done",
-                    "Program Done",
-                    JOptionPane.INFORMATION_MESSAGE,
-                )
+                cls.report("Cumulus download completed successfully.")
+                if cls.publish is None:
+                    JOptionPane.showMessageDialog(
+                        None,
+                        "Program Done",
+                        "Program Done",
+                        JOptionPane.INFORMATION_MESSAGE,
+                    )
             except ValueError as ex:
                 print(ex)
 
@@ -124,6 +171,7 @@ class Cumulus():
         if all([cls.products_meta, cls.watersheds_meta]):
             return cls.products_meta, cls.watersheds_meta
 
+        cls.report("Retrieving Cumulus product and watershed metadata...")
         orig_go_config = deepcopy(cls.go_config)
 
         try:
@@ -141,6 +189,8 @@ class Cumulus():
             if "error" in stderr:
                 raise CumulusConnectionError(stderr)
             cls.watersheds_meta = json.loads(ws_out)
+
+            cls.report("Metadata retrieved!")
 
             return cls.products_meta, cls.watersheds_meta
 

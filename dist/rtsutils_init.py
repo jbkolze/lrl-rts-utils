@@ -37,6 +37,7 @@ def extract_zip(src, dst):
     with ZipFile(bytes_io, "r") as zip_ref:
         zip_ref.extractall(dst)
 
+
 def main(cfg):
     """Initial setup rtsutils
 
@@ -123,16 +124,15 @@ def main(cfg):
         )
 
 
-
 if __name__ == "__main__":
     Config = namedtuple("Config", FIELD_NAMES)
     #
     # ~~~~~~ Configure Here ~~~~~~ #
     #
-    Config.user = "USACE"
-    Config.repo = "rts-utils"
+    Config.user = "jbkolze"
+    Config.repo = "lrl-rts-utils"
     Config.branch = "stable"
-    Config.file_path = "dist/rts-utils.zip"
+    Config.file_path = "dist/lrl-rts-utils.zip"
     Config.personal_config = "RTSUTILS-Personal.config"
     Config.cavi_config_name = ["CAVI.config", "HEC-RTS.config"]
     Config.appdata = os.getenv("APPDATA")

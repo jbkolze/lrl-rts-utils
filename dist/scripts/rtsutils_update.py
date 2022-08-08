@@ -63,8 +63,8 @@ if __name__ == "__main__":
 #
 # ~~~~~~ Configure Here ~~~~~~ #
 #
-    Config.user = "USACE"
-    Config.repo = "rts-utils"
+    Config.user = "jbkolze"
+    Config.repo = "lrl-rts-utils"
     Config.branch = "stable"
     Config.appdata = APPDATA
     Config.rtsutils_dst = os.path.join(Config.appdata, Config.repo)

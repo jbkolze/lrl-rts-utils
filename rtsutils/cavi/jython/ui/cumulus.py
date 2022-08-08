@@ -3,6 +3,8 @@
 
 import os
 import json
+from copy import deepcopy
+from datetime import datetime
 from java.lang import Short, Runnable
 from java.awt import EventQueue, Font, Point, Cursor
 from javax.swing import (
@@ -25,10 +27,48 @@ from rtsutils.cavi.jython import jutil
 from rtsutils.utils.config import DictConfig
 from rtsutils.utils import CLOUD_ICON, product_index, product_refactor, watershed_index, watershed_refactor
 
+ISO_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+class CumulusConnectionError(Exception):
+    pass
+
 
 class Cumulus():
     cumulus_configs = {}
     go_config = {}
+    products_meta = None
+    watersheds_meta = None
+    publish = None
+
+    def __init__(self, publish=None):
+        """Initializes the Cumulus download manager class.
+
+        Parameters
+        ----------
+        publish : callable, optional
+            A callback function that takes a single string (for log messages) or a
+            single integer (for progress bar updates) as an argument.  Passes real-time
+            updates to an external GUI.  By default, None.
+        """
+        Cumulus.publish = publish
+        Cumulus.report("Cumulus data request has been initialized.")
+
+    @classmethod
+    def report(cls, msg):
+        """Publishes or prints a timestamped status update.
+
+        Parameters
+        ----------
+        msg : str
+            The string to be published or printed.
+        """
+        now_dt = datetime.strftime(datetime.now(), '%Y/%m/%d %H:%M:%S')
+        dt_msg = '{} {}'.format(now_dt, msg)
+        if cls.publish:
+            cls.publish(dt_msg)
+        else:
+            print(dt_msg)
 
     @classmethod
     def invoke(cls):
@@ -37,7 +77,7 @@ class Cumulus():
         EventQueue.invokeLater(cls.Cumulus_Runnable())
 
     @classmethod
-    def execute(cls):
+    def execute(cls, use_cache=True):
         """executing the Go binding as a subprocess"""
         configurations = DictConfig(cls.cumulus_configs).read()
 
@@ -49,9 +89,36 @@ class Cumulus():
             "Products": configurations["product_ids"],
         })
 
-        stdout, stderr = go.get(cls.go_config, out_err=True, is_shell=False)
-        print(stderr)
-        if "error" in stderr:
+        product_list = ", ".join([cls.get_product_by_id(product_id)["name"]
+                                 for product_id in configurations["product_ids"]])
+        cls.report("Requested products: {}".format(product_list))
+        cls.report("Requested time window: {} - {}".format(cls.go_config["After"], cls.go_config["Before"]))
+
+        if use_cache:
+            cls.report("Updating time window based on cached/existing data...")
+            cls.adjust_dates_by_cache()
+            after = datetime.strptime(cls.go_config["After"], ISO_FORMAT)
+            before = datetime.strptime(cls.go_config["Before"], ISO_FORMAT)
+            if before <= after:
+                cls.report("All requested observed data has been previously downloaded.")
+                cls.report("Removing observed products...")
+                cls.remove_observed_products()
+                if not cls.go_config["Products"]:
+                    cls.report("No product downloads required.  Aborting...")
+                    return
+            else:
+                cls.report("Updated time window: {} - {}".format(cls.go_config["After"], cls.go_config["Before"]))
+
+        cls.report("---BEGIN CUMULUS DOWNLOAD SUBROUTINE---")
+        stdout, stderr = go.get(
+            cls.go_config,
+            out_err=True,
+            is_shell=False,
+            realtime=True,
+            publish=cls.publish
+        )
+        cls.report("---CUMULUS DOWNLOAD SUBROUTINE COMPLETE---")
+        if "error" in stderr and cls.publish is None:
             JOptionPane.showMessageDialog(
                 None,
                 stderr.split("::")[-1],
@@ -63,12 +130,14 @@ class Cumulus():
                 _, file_path = stdout.split("::")
                 jutil.convert_dss(file_path, configurations["dss"])
 
-                JOptionPane.showMessageDialog(
-                    None,
-                    "Program Done",
-                    "Program Done",
-                    JOptionPane.INFORMATION_MESSAGE,
-                )
+                cls.report("Cumulus download completed successfully.")
+                if cls.publish is None:
+                    JOptionPane.showMessageDialog(
+                        None,
+                        "Program Done",
+                        "Program Done",
+                        JOptionPane.INFORMATION_MESSAGE,
+                    )
             except ValueError as ex:
                 print(ex)
 
@@ -87,6 +156,177 @@ class Cumulus():
             Go parameters to update class defined configurations
         """
         cls.go_config = dict_
+
+    @classmethod
+    def get_metadata(cls):
+        """Retrieves Cumulus product and watershed metadata.
+
+        If metadata has not been previously downloaded, executes a go
+        subroutine to download the metadata.  Original go configuration
+        is maintained after function runs.
+
+        Returns
+        -------
+        products_meta : list[dict]
+            Cumulus products metadata
+
+        watersheds_meta : list[dict]
+            Cumulus watersheds metadata
+        """
+        if all([cls.products_meta, cls.watersheds_meta]):
+            return cls.products_meta, cls.watersheds_meta
+
+        cls.report("Retrieving Cumulus product and watershed metadata...")
+        orig_go_config = deepcopy(cls.go_config)
+
+        try:
+            cls.go_config["StdOut"] = "true"
+            cls.go_config["Subcommand"] = "get"
+
+            cls.go_config["Endpoint"] = "products"
+            ps_out, stderr = go.get(cls.go_config, out_err=True, is_shell=False)
+            if "error" in stderr:
+                raise CumulusConnectionError(stderr)
+            cls.products_meta = json.loads(ps_out)
+
+            cls.go_config["Endpoint"] = "watersheds"
+            ws_out, stderr = go.get(cls.go_config, out_err=True, is_shell=False)
+            if "error" in stderr:
+                raise CumulusConnectionError(stderr)
+            cls.watersheds_meta = json.loads(ws_out)
+
+            cls.report("Metadata retrieved!")
+
+            return cls.products_meta, cls.watersheds_meta
+
+        finally:
+            cls.go_config = orig_go_config
+
+    @classmethod
+    def get_product(cls, name):
+        """Retrieve product metadata by name.
+
+        Parameters
+        ----------
+        name : string
+            The name of the product.
+
+        Returns
+        -------
+        dict or None
+            The metadata of the product if found, or None if not.
+        """
+        products, _ = cls.get_metadata()
+        for product in products:
+            if product["name"] == name:
+                return product
+        return None
+
+    @classmethod
+    def get_product_by_id(cls, product_id):
+        """Retrieve product metadata by id.
+
+        Parameters
+        ----------
+        product_id : string
+            The id of the product.
+
+        Returns
+        -------
+        dict or None
+            The metadata of the product if found, or None if not.
+        """
+        products, _ = cls.get_metadata()
+        for product in products:
+            if product["id"] == product_id:
+                return product
+        return None
+
+    @classmethod
+    def get_watershed(cls, office, name):
+        """Retrieve watershed metadata by office symbol and name.
+
+        Parameters
+        ----------
+        office : string
+            The 3-letter office symbol for the watershed.
+        name : string
+            The name of the watershed.
+
+        Returns
+        -------
+        dict or None
+            The metadata of the watershed if found, or None if not.
+        """
+        _, watersheds = cls.get_metadata()
+        for watershed in watersheds:
+            if watershed["office_symbol"] == office and watershed["name"] == name:
+                return watershed
+        return None
+
+    @classmethod
+    def get_watershed_by_id(cls, watershed_id):
+        """Retrieve watershed metadata by id.
+
+        Parameters
+        ----------
+        watershed_id : string
+            The id of the watershed.
+
+        Returns
+        -------
+        dict or None
+            The metadata of the watershed if found, or None if not.
+        """
+        _, watersheds = cls.get_metadata()
+        for watershed in watersheds:
+            if watershed["id"] == watershed_id:
+                return watershed
+        return None
+
+    @classmethod
+    def adjust_dates_by_cache(cls):
+        """Removes existing data range from go_config time window
+
+        Checks for existing data in the DSS file set in the cumulus configuration.
+        Searches based on the b-part of the watershed and the f-part of the
+        -first observed- product as listed in product_ids.
+
+        The After and Before values within go_config are adjusted to avoid
+        downloading data that already exists within the DSS file.
+        """
+        config = DictConfig(cls.cumulus_configs).read()
+
+        after = datetime.strptime(cls.go_config["After"], ISO_FORMAT)
+        before = datetime.strptime(cls.go_config["Before"], ISO_FORMAT)
+
+        dss_path = config["dss"]
+        b_part = cls.get_watershed_by_id(config["watershed_id"])["name"]
+        for product_id in config["product_ids"]:
+            product = cls.get_product_by_id(product_id)
+            if product["last_forecast_version"]:  # Skip forecasts
+                continue
+            f_part = product["dss_fpart"]
+            data_start, data_end = jutil.get_existing_precip_data_range(dss_path, b_part, f_part)
+            if data_start is None or data_end is None:
+                break
+            if data_end > after > data_start:
+                after = data_end
+            if data_end > before > data_start:
+                before = data_start
+            cls.go_config["After"] = after.strftime(ISO_FORMAT)
+            cls.go_config["Before"] = before.strftime(ISO_FORMAT)
+
+    @classmethod
+    def remove_observed_products(cls):
+        """Remove non-forecast products from go_config."""
+        product_ids = cls.go_config["Products"]
+        forecast_product_ids = []
+        for product_id in product_ids:
+            product = cls.get_product_by_id(product_id)
+            if product["last_forecast_version"] is not None:
+                forecast_product_ids.append(product_id)
+        cls.go_config["Products"] = forecast_product_ids
 
     class Cumulus_Runnable(Runnable):
         """java.lang.Runnable class executes run when called"""
@@ -176,7 +416,7 @@ class Cumulus():
                 component-defined action
             """
             self.dispose()
-        
+
         def create_jbutton(self, label, action):
             """Dynamic JButton creation
 
@@ -248,21 +488,9 @@ class Cumulus():
             self.outer_class.go_config["Subcommand"] = "get"
             self.outer_class.go_config["Endpoint"] = "watersheds"
 
-            ws_out, stderr = go.get(self.outer_class.go_config, out_err=True, is_shell=False)
-            self.outer_class.go_config["Endpoint"] = "products"
-            ps_out, stderr = go.get(self.outer_class.go_config, out_err=True, is_shell=False)
-
-            if "error" in stderr:
-                print(stderr)
-                JOptionPane.showMessageDialog(
-                    None,
-                    stderr.split("::")[-1],
-                    "Program Error",
-                    JOptionPane.ERROR_MESSAGE,
-                )
-
-            self.api_watersheds = watershed_refactor(json.loads(ws_out)) if ws_out else {}
-            self.api_products = product_refactor(json.loads(ps_out)) if ps_out else {}
+            ps_out, ws_out = self.outer_class.get_metadata()
+            self.api_watersheds = watershed_refactor(ws_out) if ws_out else {}
+            self.api_products = product_refactor(ps_out) if ps_out else {}
 
             frame = JFrame("Cumulus Configuration")
             frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE)
@@ -275,7 +503,8 @@ class Cumulus():
             content_pane = frame.getContentPane()
 
             # create lists
-            self.watershed_list = self.create_jlist("Watersheds", self.api_watersheds, ListSelectionModel.SINGLE_SELECTION)
+            self.watershed_list = self.create_jlist(
+                "Watersheds", self.api_watersheds, ListSelectionModel.SINGLE_SELECTION)
             self.product_list = self.create_jlist("Products", self.api_products)
             # create buttons
             select_button = self.create_jbutton("...", self.select)
@@ -308,6 +537,8 @@ class Cumulus():
             except KeyError as ex:
                 print("KeyError: missing {}".format(ex))
 
+            # autopep8: off
+            # pylint: disable=bad-continuation, line-too-long
             layout = GroupLayout(content_pane)
             content_pane.setLayout(layout)
             layout.setHorizontalGroup(
@@ -350,9 +581,10 @@ class Cumulus():
                         .addComponent(save_button, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
                     .addContainerGap())
             )
+            # pylint: enable=bad-continuation, line-too-long
+            # autopep8: on
 
             frame.pack()
             frame.setLocationRelativeTo(None)
-
 
             frame.setVisible(True)

@@ -118,28 +118,29 @@ class Cumulus():
             publish=cls.publish
         )
         cls.report("---CUMULUS DOWNLOAD SUBROUTINE COMPLETE---")
-        if "error" in stderr and cls.publish is None:
-            JOptionPane.showMessageDialog(
-                None,
-                stderr.split("::")[-1],
-                "Program Error",
-                JOptionPane.ERROR_MESSAGE,
-            )
+        if "error" in stderr:
+            if cls.publish is None:
+                JOptionPane.showMessageDialog(
+                    None,
+                    stderr.split("::")[-1],
+                    "Program Error",
+                    JOptionPane.ERROR_MESSAGE,
+                )
+            else:
+                err = stderr.split("::")[-1]
+                cls.report("Program Error: {}".format(err))
         else:
-            try:
-                _, file_path = stdout.split("::")
-                jutil.convert_dss(file_path, configurations["dss"])
+            _, file_path = stdout.split("::")
+            jutil.convert_dss(file_path, configurations["dss"])
 
-                cls.report("Cumulus download completed successfully.")
-                if cls.publish is None:
-                    JOptionPane.showMessageDialog(
-                        None,
-                        "Program Done",
-                        "Program Done",
-                        JOptionPane.INFORMATION_MESSAGE,
-                    )
-            except ValueError as ex:
-                print(ex)
+            cls.report("Cumulus download completed successfully.")
+            if cls.publish is None:
+                JOptionPane.showMessageDialog(
+                    None,
+                    "Program Done",
+                    "Program Done",
+                    JOptionPane.INFORMATION_MESSAGE,
+                )
 
     @classmethod
     def cumulus_configuration(cls, cfg):

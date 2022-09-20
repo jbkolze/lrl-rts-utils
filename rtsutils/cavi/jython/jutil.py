@@ -116,30 +116,66 @@ def convert_dss(dss_src, dss_dst):
         DSS location, user defined
     """
     msg = "Downloaded grid not found"
-    try:
-        if os.path.exists(dss_src):
+    if os.path.exists(dss_src):
+        try:
             dss7 = HecDSSUtilities()
             dss7.setDSSFileName(dss_src)
             dss6_temp = os.path.join(tempfile.gettempdir(), "dss6.dss")
             result = dss7.convertVersion(dss6_temp)
             dss6 = HecDSSUtilities()
             dss6.setDSSFileName(dss6_temp)
-            dss6.copyFile(dss_dst)
+            max_retries = 10
+            for i in range(max_retries):
+                dss6.copyFile(dss_dst)
+                copy_success = verify_copy(dss6_temp, dss_dst)
+                if copy_success:
+                    break
+                print("Failed DSS copy attempt {} of {}".format(i + 1, max_retries))
+            else:
+                raise Exception("Failed to copy downloaded grids to destination DSS file")
+        finally:
             dss7.close()
             dss6.close()
-
             print("Try removing tmp DSS files")
             os.remove(dss_src)
             os.remove(dss6_temp)
 
-            msg = "Converted '{}' to '{}' (int={})".format(dss_src, dss_dst, result)
-    except NameError as ex:
-        print(ex)
-        quit()
-    except Exception as ex:
-        print(ex)
+        msg = "Converted '{}' to '{}' (int={})".format(dss_src, dss_dst, result)
 
     print(msg)
+
+
+def verify_copy(dss_src_path, dss_dst_path):
+    """Verifies that all pathnames in the source DSS exist in the destination DSS.
+
+    Parameters
+    ----------
+    dss_src_path : string
+        Path of the source DSS file.
+    dss_dst_path : string
+        Path of the destination DSS file.
+
+    Returns
+    -------
+    bool
+        True if all source DSS pathnames exist in the destination DSS, false if not.
+    """
+    dss_src = HecDSSUtilities()
+    dss_src.setDSSFileName(dss_src_path)
+    src_paths = dss_src.getPathnameList(True)
+    src_paths = [src_path.upper() for src_path in src_paths]
+    dest_dss = HecDSSUtilities()
+    dest_dss.setDSSFileName(dss_dst_path)
+    dest_paths = dest_dss.getPathnameList(True)
+    dest_paths = [dest_path.upper() for dest_path in dest_paths]
+
+    is_fully_copied = True
+    for src_path in src_paths:
+        if src_path not in dest_paths:
+            print("Could not find path {}".format(src_path))
+            is_fully_copied = False
+            break
+    return is_fully_copied
 
 
 def get_precip_record_datetimes(pathname):

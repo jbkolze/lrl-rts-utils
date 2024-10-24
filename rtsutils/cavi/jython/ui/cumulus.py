@@ -107,7 +107,13 @@ class Cumulus():
                     cls.report("No product downloads required.  Aborting...")
                     return
             else:
+                totalTime = after - before
+                timeout = int(totalTime.days * 20)
+                if timeout < 300:
+                    timeout = 300
                 cls.report("Updated time window: {} - {}".format(cls.go_config["After"], cls.go_config["Before"]))
+                cls.go_config.update({"Timeout": timeout})
+                cls.report("Updated timeout value: {} seconds".format(timeout))
 
         cls.report("---BEGIN CUMULUS DOWNLOAD SUBROUTINE---")
         stdout, stderr = go.get(

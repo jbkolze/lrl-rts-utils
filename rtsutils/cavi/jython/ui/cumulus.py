@@ -135,6 +135,7 @@ class Cumulus():
             else:
                 err = stderr.split("::")[-1]
                 cls.report("Program Error: {}".format(err))
+                raise Exception(err)
         else:
             _, file_path = stdout.split("::")
             jutil.convert_dss(file_path, configurations["dss"])
